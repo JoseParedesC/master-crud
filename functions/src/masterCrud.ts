@@ -37,12 +37,13 @@ export const deleteMasterEntity = functions.onCall(async (request) => {
 
   const { collection, entityId, references } = request.data as DeleteMasterRequest;
   const db = getFirestore();
+  const userRoot = db.collection("users").doc(request.auth.uid);
 
   // Repetir la comprobación de referencias con Admin SDK, justo antes de
   // borrar, para minimizar la ventana de carrera al mínimo posible.
   const counts = await Promise.all(
     references.map(async (ref) => {
-      const snap = await db
+      const snap = await userRoot
         .collection(ref.collection)
         .where(ref.field, "==", entityId)
         .count()
@@ -61,7 +62,7 @@ export const deleteMasterEntity = functions.onCall(async (request) => {
     );
   }
 
-  const entityRef = db.collection(collection).doc(entityId);
+  const entityRef = userRoot.collection(collection).doc(entityId);
   const entitySnap = await entityRef.get();
   if (!entitySnap.exists) {
     throw new functions.HttpsError("not-found", "El registro no existe.");
@@ -71,13 +72,13 @@ export const deleteMasterEntity = functions.onCall(async (request) => {
   const batch = db.batch();
   if (code) {
     const registryId = `${collection}__${code.trim().toLowerCase()}`;
-    batch.delete(db.collection("masterCodeRegistry").doc(registryId));
+    batch.delete(userRoot.collection("masterCodeRegistry").doc(registryId));
   }
   batch.delete(entityRef);
 
   await batch.commit();
 
-  await db.collection("auditLogs").add({
+  await userRoot.collection("auditLogs").add({
     entity: collection,
     entityId,
     action: "DELETE",

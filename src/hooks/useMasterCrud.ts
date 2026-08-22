@@ -52,7 +52,7 @@ export function useMasterCrud<T extends MasterEntity>({
     setUiState("loading");
     setErrorMessage(null);
     try {
-      const data = await service.list(filters);
+      const data = await service.list(filters, currentUser);
       setRows(data);
       setUiState(data.length === 0 ? "empty" : "success");
     } catch (error) {
@@ -61,7 +61,7 @@ export function useMasterCrud<T extends MasterEntity>({
       );
       setUiState("error");
     }
-  }, [service, filters]);
+  }, [service, filters, currentUser]);
 
   useEffect(() => {
     load();
@@ -133,7 +133,7 @@ export function useMasterCrud<T extends MasterEntity>({
       setBlockedReferences(null);
       setUiState("checkingReferences");
       try {
-        const counts = await service.countReferences(row.id);
+        const counts = await service.countReferences(row.id, currentUser);
         const withReferences = counts.filter((c) => c.count > 0);
         if (withReferences.length > 0) {
           setBlockedReferences(withReferences);
@@ -149,7 +149,7 @@ export function useMasterCrud<T extends MasterEntity>({
         setPendingDelete(null);
       }
     },
-    [service]
+    [service, currentUser]
   );
 
   const cancelDelete = useCallback(() => {

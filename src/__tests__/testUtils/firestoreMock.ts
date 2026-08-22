@@ -93,8 +93,12 @@ class FakeStore {
 
 export const store = new FakeStore();
 
-export function collection(_db: unknown, path: string) {
-  return { __type: "collection", path };
+function joinPath(parts: unknown[]) {
+  return parts.filter((part) => typeof part === "string").join("/");
+}
+
+export function collection(_db: unknown, ...pathParts: unknown[]) {
+  return { __type: "collection", path: joinPath(pathParts) };
 }
 
 export function doc(...args: unknown[]) {
@@ -102,8 +106,9 @@ export function doc(...args: unknown[]) {
     const collRef = args[0] as { path: string };
     return { __type: "doc", path: collRef.path, id: store.newId(collRef.path) };
   }
-  const [, path, id] = args as [unknown, string, string];
-  return { __type: "doc", path, id };
+  const pathParts = args.slice(1);
+  const id = pathParts.pop() as string;
+  return { __type: "doc", path: joinPath(pathParts), id };
 }
 
 export function where(field: string, op: string, value: unknown): WhereConstraint {

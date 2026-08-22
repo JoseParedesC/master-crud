@@ -33,6 +33,7 @@ import {
 } from "./deleteStrategy";
 
 const CODE_REGISTRY_COLLECTION = "masterCodeRegistry";
+const USERS_COLLECTION = "users";
 
 interface CurrentUser {
   uid: string;
@@ -51,13 +52,27 @@ export class MasterCrudService<T extends MasterEntity> {
     private readonly config: MasterCrudConfig<T>
   ) {}
 
-  private col() {
-    return collection(this.db, this.config.collection);
+  private col(uid: string) {
+    return collection(this.db, USERS_COLLECTION, uid, this.config.collection);
+  }
+
+  private registryDoc(uid: string, registryId: string) {
+    return doc(
+      this.db,
+      USERS_COLLECTION,
+      uid,
+      CODE_REGISTRY_COLLECTION,
+      registryId
+    );
+  }
+
+  private referenceCol(uid: string, collectionName: string) {
+    return collection(this.db, USERS_COLLECTION, uid, collectionName);
   }
 
   // ── Lectura ────────────────────────────────────────────────────────
 
-  async list(filters: MasterFilters): Promise<T[]> {
+  async list(filters: MasterFilters, user: CurrentUser): Promise<T[]> {
     try {
       const constraints: QueryConstraint[] = [
         orderBy(this.config.nameField as string, "asc"),
@@ -68,7 +83,7 @@ export class MasterCrudService<T extends MasterEntity> {
         constraints.unshift(where("active", "==", filters.status === "active"));
       }
 
-      const snap = await getDocs(query(this.col(), ...constraints));
+      const snap = await getDocs(query(this.col(user.uid), ...constraints));
       const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as T);
 
       // La búsqueda de texto libre se filtra en cliente porque Firestore
@@ -88,9 +103,11 @@ export class MasterCrudService<T extends MasterEntity> {
     }
   }
 
-  async getById(id: string): Promise<T | null> {
+  async getById(id: string, user: CurrentUser): Promise<T | null> {
     try {
-      const snap = await getDoc(doc(this.db, this.config.collection, id));
+      const snap = await getDoc(
+        doc(this.db, USERS_COLLECTION, user.uid, this.config.collection, id)
+      );
       if (!snap.exists()) return null;
       return { id: snap.id, ...snap.data() } as T;
     } catch (error) {
@@ -112,12 +129,12 @@ export class MasterCrudService<T extends MasterEntity> {
       : undefined;
 
     try {
-      const newDocRef = doc(this.col());
+      const newDocRef = doc(this.col(user.uid));
 
       const result = await runTransaction(this.db, async (tx) => {
         if (code && this.config.codeField) {
           const registryId = buildCodeRegistryId(this.config.collection, code);
-          const registryRef = doc(this.db, CODE_REGISTRY_COLLECTION, registryId);
+          const registryRef = this.registryDoc(user.uid, registryId);
           const registrySnap = await tx.get(registryRef);
           if (registrySnap.exists()) {
             throw new DuplicateCodeError(code);
@@ -168,7 +185,13 @@ export class MasterCrudService<T extends MasterEntity> {
 
     try {
       await runTransaction(this.db, async (tx) => {
-        const entityRef = doc(this.db, this.config.collection, id);
+        const entityRef = doc(
+          this.db,
+          USERS_COLLECTION,
+          user.uid,
+          this.config.collection,
+          id
+        );
         const currentSnap = await tx.get(entityRef);
         if (!currentSnap.exists()) {
           throw new Error("not-found");
@@ -182,11 +205,7 @@ export class MasterCrudService<T extends MasterEntity> {
               this.config.collection,
               nextCode
             );
-            const newRegistryRef = doc(
-              this.db,
-              CODE_REGISTRY_COLLECTION,
-              newRegistryId
-            );
+            const newRegistryRef = this.registryDoc(user.uid, newRegistryId);
             const newRegistrySnap = await tx.get(newRegistryRef);
             if (newRegistrySnap.exists()) {
               throw new DuplicateCodeError(nextCode);
@@ -196,7 +215,7 @@ export class MasterCrudService<T extends MasterEntity> {
               this.config.collection,
               currentCode
             );
-            tx.delete(doc(this.db, CODE_REGISTRY_COLLECTION, oldRegistryId));
+            tx.delete(this.registryDoc(user.uid, oldRegistryId));
             tx.set(newRegistryRef, {
               collection: this.config.collection,
               code: normalizeCode(nextCode),
@@ -218,11 +237,14 @@ export class MasterCrudService<T extends MasterEntity> {
 
   async setActive(id: string, active: boolean, user: CurrentUser): Promise<void> {
     try {
-      await updateDoc(doc(this.db, this.config.collection, id), {
-        active,
-        updatedAt: serverTimestamp(),
-        updatedBy: user.uid,
-      });
+      await updateDoc(
+        doc(this.db, USERS_COLLECTION, user.uid, this.config.collection, id),
+        {
+          active,
+          updatedAt: serverTimestamp(),
+          updatedBy: user.uid,
+        }
+      );
     } catch (error) {
       throw toMasterError(error);
     }
@@ -235,13 +257,16 @@ export class MasterCrudService<T extends MasterEntity> {
    * apuntan a este maestro. Usa `getCountFromServer` (agregación) para no
    * descargar documentos completos solo para saber si existen.
    */
-  async countReferences(entityId: string): Promise<ReferenceCount[]> {
+  async countReferences(
+    entityId: string,
+    user: CurrentUser
+  ): Promise<ReferenceCount[]> {
     const references: MasterReference[] = this.config.references ?? [];
     try {
       const results = await Promise.all(
         references.map(async (ref) => {
           const q = query(
-            collection(this.db, ref.collection),
+            this.referenceCol(user.uid, ref.collection),
             where(ref.field, "==", entityId)
           );
           const snap = await getCountFromServer(q);
@@ -263,7 +288,7 @@ export class MasterCrudService<T extends MasterEntity> {
    */
   async remove(entity: T, user: CurrentUser): Promise<{ softDeleted: boolean }> {
     try {
-      const referenceCounts = await this.countReferences(entity.id);
+      const referenceCounts = await this.countReferences(entity.id, user);
       const strategy = resolveDeleteStrategy(
         referenceCounts,
         this.config.allowDelete ?? false
@@ -283,11 +308,17 @@ export class MasterCrudService<T extends MasterEntity> {
 
       // Física: liberar también el registro de código, si aplica.
       await runTransaction(this.db, async (tx) => {
-        const entityRef = doc(this.db, this.config.collection, entity.id);
+        const entityRef = doc(
+          this.db,
+          USERS_COLLECTION,
+          user.uid,
+          this.config.collection,
+          entity.id
+        );
         if (this.config.codeField) {
           const code = entity[this.config.codeField] as unknown as string;
           const registryId = buildCodeRegistryId(this.config.collection, code);
-          tx.delete(doc(this.db, CODE_REGISTRY_COLLECTION, registryId));
+          tx.delete(this.registryDoc(user.uid, registryId));
         }
         tx.delete(entityRef);
       });

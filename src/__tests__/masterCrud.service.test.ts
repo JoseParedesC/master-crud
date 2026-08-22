@@ -78,6 +78,24 @@ describe("MasterCrudService", () => {
     ).rejects.toBeInstanceOf(DuplicateCodeError);
   });
 
+  it("aísla los registros y permite repetir códigos entre usuarios", async () => {
+    const service = new MasterCrudService<TestCategory>(db, config);
+    await service.create({ code: "ALIM", name: "Alimentación" } as Partial<TestCategory>, user);
+    await service.create(
+      { code: "ALIM", name: "Alimentación de otro usuario" } as Partial<TestCategory>,
+      { uid: "user-2" }
+    );
+
+    const filters = { status: "all", search: "" } as const;
+    const ownRows = await service.list(filters, user);
+    const otherRows = await service.list(filters, { uid: "user-2" });
+
+    expect(ownRows).toHaveLength(1);
+    expect(ownRows[0].name).toBe("Alimentación");
+    expect(otherRows).toHaveLength(1);
+    expect(otherRows[0].name).toBe("Alimentación de otro usuario");
+  });
+
   it("edita un maestro manteniendo createdAt y createdBy", async () => {
     const service = new MasterCrudService<TestCategory>(db, config);
     const created = await service.create(
@@ -87,10 +105,10 @@ describe("MasterCrudService", () => {
     const originalCreatedAt = created.createdAt;
 
     await service.update(created.id, { name: "Alimentación y bebidas" } as Partial<TestCategory>, {
-      uid: "user-2",
+      uid: "user-1",
     });
 
-    const stored = store.get("categories", created.id);
+    const stored = store.get("users/user-1/categories", created.id);
     expect(stored?.data.createdAt).toBe(originalCreatedAt);
     expect(stored?.data.createdBy).toBe("user-1");
   });
@@ -103,11 +121,11 @@ describe("MasterCrudService", () => {
     );
 
     await service.update(created.id, { name: "Alimentación y bebidas" } as Partial<TestCategory>, {
-      uid: "user-2",
+      uid: "user-1",
     });
 
-    const stored = store.get("categories", created.id);
-    expect(stored?.data.updatedBy).toBe("user-2");
+    const stored = store.get("users/user-1/categories", created.id);
+    expect(stored?.data.updatedBy).toBe("user-1");
     expect(stored?.data.name).toBe("Alimentación y bebidas");
   });
 
@@ -133,9 +151,9 @@ describe("MasterCrudService", () => {
 
     const result = await service.remove(created, user);
     expect(result.softDeleted).toBe(false);
-    expect(store.get("categories", created.id)).toBeNull();
+    expect(store.get("users/user-1/categories", created.id)).toBeNull();
     // el registro de código también debe liberarse
-    expect(store.get("masterCodeRegistry", "categories__alim")).toBeNull();
+    expect(store.get("users/user-1/masterCodeRegistry", "categories__alim")).toBeNull();
   });
 
   it("rechaza la eliminación cuando existen referencias", async () => {
@@ -144,13 +162,13 @@ describe("MasterCrudService", () => {
       { code: "ALIM", name: "Alimentación" } as Partial<TestCategory>,
       user
     );
-    store.seed("movements", "mov-1", { categoryId: created.id });
+    store.seed("users/user-1/movements", "mov-1", { categoryId: created.id });
 
     await expect(service.remove(created, user)).rejects.toBeInstanceOf(
       ReferencedEntityError
     );
     // no debe haberse borrado
-    expect(store.get("categories", created.id)).not.toBeNull();
+    expect(store.get("users/user-1/categories", created.id)).not.toBeNull();
   });
 
   it("detecta referencias en múltiples colecciones", async () => {
@@ -159,10 +177,10 @@ describe("MasterCrudService", () => {
       { code: "ALIM", name: "Alimentación" } as Partial<TestCategory>,
       user
     );
-    store.seed("movements", "mov-1", { categoryId: created.id });
-    store.seed("budgets", "bud-1", { categoryId: created.id });
+    store.seed("users/user-1/movements", "mov-1", { categoryId: created.id });
+    store.seed("users/user-1/budgets", "bud-1", { categoryId: created.id });
 
-    const counts = await service.countReferences(created.id);
+    const counts = await service.countReferences(created.id, user);
     expect(counts.find((c) => c.description === "movimientos")?.count).toBe(1);
     expect(counts.find((c) => c.description === "presupuestos")?.count).toBe(1);
   });
@@ -176,7 +194,7 @@ describe("MasterCrudService", () => {
 
     const result = await service.remove(created, user);
     expect(result.softDeleted).toBe(true);
-    const stored = store.get("categories", created.id);
+    const stored = store.get("users/user-1/categories", created.id);
     expect(stored?.data.active).toBe(false);
   });
 
@@ -189,7 +207,7 @@ describe("MasterCrudService", () => {
     await service.setActive(created.id, false, user);
     await service.setActive(created.id, true, user);
 
-    const stored = store.get("categories", created.id);
+    const stored = store.get("users/user-1/categories", created.id);
     expect(stored?.data.active).toBe(true);
   });
 

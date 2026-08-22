@@ -7,6 +7,10 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function isCurrentUser(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
     function isOwnerField(field) {
       return request.resource.data[field] == request.auth.uid;
     }
@@ -19,11 +23,11 @@ service cloud.firestore {
     // El ID del documento es "{collection}__{code-en-minusculas}".
     // Al crear, solo se permite si NO existe ya (compare-and-swap real,
     // reforzado del lado del servidor, no solo en el cliente).
-    match /masterCodeRegistry/{registryId} {
-      allow read: if isSignedIn();
+    match /users/{userId}/masterCodeRegistry/{registryId} {
+      allow read: if isCurrentUser(userId);
 
-      allow create: if isSignedIn()
-                    && !exists(/databases/$(database)/documents/masterCodeRegistry/$(registryId));
+      allow create: if isCurrentUser(userId)
+                    && !exists(/databases/$(database)/documents/users/$(userId)/masterCodeRegistry/$(registryId));
 
       // Solo se permite borrar/actualizar el registro si el usuario tiene
       // permiso de escritura sobre la colección referenciada (ver reglas
@@ -33,29 +37,32 @@ service cloud.firestore {
       // el endurecimiento final (impedir que cualquiera libere el código
       // de otro) debería moverse a una Cloud Function si se requiere
       // garantía dura.
-      allow update, delete: if isSignedIn();
+      allow update, delete: if isCurrentUser(userId);
     }
 
     // ── Maestros genéricos (categories, paymentMethods, etc.) ───────
     // Aplica a cualquier colección de maestro que siga esta convención.
     // Si se prefiere una regla por colección, duplicar este bloque con
     // el nombre exacto en vez del wildcard.
-    match /{masterCollection}/{docId} {
-      allow read: if isSignedIn()
-                  && masterCollection in ['categories', 'paymentMethods', 'movementTypes', 'accounts', 'budgetCategories'];
+    match /users/{userId}/{masterCollection}/{docId} {
+      allow read: if isCurrentUser(userId)
+                  && masterCollection in ['categories', 'paymentMethods', 'movementTypes', 'accounts', 'budgetCategories', 'movements', 'budgets'];
 
-      allow create: if isSignedIn()
+      allow create: if isCurrentUser(userId)
                     && masterCollection in ['categories', 'paymentMethods', 'movementTypes', 'accounts', 'budgetCategories']
                     && isOwnerField('createdBy')
                     && isOwnerField('updatedBy');
 
-      allow update: if isSignedIn()
+      allow update: if isCurrentUser(userId)
                     && masterCollection in ['categories', 'paymentMethods', 'movementTypes', 'accounts', 'budgetCategories']
                     && unchanged('createdAt')
                     && unchanged('createdBy')
                     && isOwnerField('updatedBy')
                     // updatedAt debe cambiar respecto al valor anterior
                     && request.resource.data.updatedAt != resource.data.updatedAt;
+
+                allow write: if isCurrentUser(userId)
+                     && masterCollection in ['movements', 'budgets'];
 
       // Eliminación física NUNCA se permite directo desde el cliente.
       // Ver ANALYSIS.md: la comprobación de referencias no puede
@@ -65,15 +72,9 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // ── Movimientos (ejemplo de colección que referencia maestros) ──
-    match /movements/{movementId} {
-      allow read, write: if isSignedIn() && isOwnerField('createdBy');
-    }
-
-    // ── Auditoría: solo lectura para usuarios, escritura solo desde
-    // Cloud Functions (Admin SDK, que ignora estas reglas) ───────────
-    match /auditLogs/{logId} {
-      allow read: if isSignedIn();
+    // ── Auditoría: cada usuario solo puede leer sus propios registros.
+    match /users/{userId}/auditLogs/{logId} {
+      allow read: if isCurrentUser(userId);
       allow write: if false;
     }
   }

@@ -115,6 +115,14 @@ npm pack --dry-run   # revisa exactamente qué se publicaría
 
 El ejemplo completo de "Category" está en `src/examples/CategoryCrud.tsx`.
 
+### Aislamiento por usuario
+
+Todos los maestros y sus referencias se guardan bajo
+`users/{uid}/{collection}`. Las lecturas requieren pasar el usuario
+autenticado al servicio y las reglas de Firestore solo permiten acceder al
+`uid` de la sesión actual. Cada usuario puede crear tantos registros como
+necesite, pero sus datos no se comparten con otros usuarios.
+
 ## Estructura
 
 ```text
