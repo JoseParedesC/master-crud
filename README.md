@@ -11,12 +11,94 @@ referencial, transacciones, concurrencia, seguridad) y las decisiones de
 arquitectura tomadas en consecuencia. El código de este módulo es
 consecuencia directa de ese análisis, no al revés.
 
-## Instalar y correr
+## Instalación (como paquete npm)
+
+```bash
+npm install @joseparedesc/master-crud
+```
+
+Requiere que tu proyecto ya tenga instalado (son `peerDependencies`, no se
+duplican dentro del paquete):
+
+```bash
+npm install react react-dom firebase react-hook-form zod @hookform/resolvers
+```
+
+### 1. Configura Tailwind
+
+Los componentes usan tokens de diseño propios (`bg-ink`, `text-slate`,
+`bg-moss-light`, `rounded-xl2`, etc.) que no existen en Tailwind por
+defecto. Agrega el preset incluido:
+
+```js
+// tailwind.config.js
+module.exports = {
+  presets: [require("@joseparedesc/master-crud/tailwind-preset")],
+  content: [
+    "./src/**/*.{js,ts,jsx,tsx}",
+    // Necesario: Tailwind no escanea node_modules por defecto.
+    "./node_modules/@joseparedesc/master-crud/dist/**/*.js",
+  ],
+};
+```
+
+### 2. Copia las Firestore Security Rules e índices
+
+`firestore.rules` y `firestore.indexes.json` se publican dentro del
+paquete como referencia — cópialos (o fusiónalos) a los tuyos con
+`firebase deploy --only firestore:rules,firestore:indexes`. No se aplican
+automáticamente: son parte de tu proyecto de Firebase, no del paquete npm.
+
+### 3. Úsalo
+
+```tsx
+import { MasterCrud, type MasterCrudConfig, type MasterEntity } from "@joseparedesc/master-crud";
+import { z } from "zod";
+
+interface Category extends MasterEntity {
+  description?: string;
+}
+
+const categoryConfig: MasterCrudConfig<Category> = {
+  collection: "categories",
+  title: "Categorías",
+  singularTitle: "Categoría",
+  codeField: "code",
+  nameField: "name",
+  searchableFields: ["code", "name"],
+  columns: [
+    { field: "code", label: "Código" },
+    { field: "name", label: "Nombre" },
+    { field: "active", label: "Estado" },
+  ],
+  formFields: [
+    { name: "code", label: "Código", type: "text", required: true, disabledOnEdit: true },
+    { name: "name", label: "Nombre", type: "text", required: true },
+  ],
+  references: [{ collection: "movements", field: "categoryId", description: "movimientos" }],
+  allowDelete: true,
+  allowDeactivate: true,
+  validationSchema: z.object({ code: z.string().min(1), name: z.string().min(1) }),
+};
+
+export function CategoryCrud({ db, user }) {
+  return <MasterCrud db={db} config={categoryConfig} currentUser={user} />;
+}
+```
+
+> **Next.js App Router:** el paquete ya incluye la directiva `"use client"`
+> en su build, así que puedes importarlo directo en un Server Component
+> padre sin marcar nada adicional (el componente en sí se hidrata como
+> cliente).
+
+## Desarrollo de este paquete
 
 ```bash
 npm install
 npm run test        # 20 tests unitarios, sin necesidad de Firestore Emulator
 npm run typecheck
+npm run build        # genera dist/ (ESM + CJS + .d.ts)
+npm pack --dry-run   # revisa exactamente qué se publicaría
 ```
 
 ## Cómo agregar un maestro nuevo

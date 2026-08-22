@@ -1,25 +1,78 @@
 {
-  "name": "master-crud",
-  "private": true,
-  "version": "1.0.0",
+  "name": "@joseparedesc/master-crud",
+  "version": "0.1.0",
+  "description": "CRUD genérico y reutilizable para maestros/configuraciones sobre React + TypeScript + Firebase Firestore, con validación de código único, detección de referencias y borrado lógico/físico configurables.",
+  "license": "MIT",
   "type": "module",
-  "scripts": {
-    "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+  "sideEffects": false,
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./tailwind-preset": "./tailwind-preset.cjs",
+    "./firestore.rules": "./firestore.rules",
+    "./firestore.indexes.json": "./firestore.indexes.json"
   },
-  "dependencies": {
+  "files": [
+    "dist",
+    "tailwind-preset.cjs",
+    "firestore.rules",
+    "firestore.indexes.json",
+    "ANALYSIS.md",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup && node scripts/add-use-client.mjs",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run typecheck && npm run test && npm run build"
+  },
+  "peerDependencies": {
+    "@hookform/resolvers": ">=3.0.0",
+    "firebase": ">=10.0.0",
+    "react": ">=18.0.0",
+    "react-dom": ">=18.0.0",
+    "react-hook-form": ">=7.0.0",
+    "zod": ">=3.0.0"
+  },
+  "devDependencies": {
     "@hookform/resolvers": "^3.9.0",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
     "firebase": "^10.12.2",
-    "lucide-react": "^0.383.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-hook-form": "^7.52.1",
+    "tsup": "^8.2.4",
+    "typescript": "^5.5.3",
+    "vitest": "^1.6.0",
     "zod": "^3.23.8"
   },
-  "devDependencies": {
-    "@types/react": "^18.3.3",
-    "@types/react-dom": "^18.3.0",
-    "typescript": "^5.5.3",
-    "vitest": "^1.6.0"
+  "dependencies": {
+    "lucide-react": "^0.383.0"
+  },
+  "keywords": [
+    "react",
+    "typescript",
+    "firebase",
+    "firestore",
+    "crud",
+    "master-data",
+    "react-hook-form",
+    "zod"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/JoseParedesC/personal_finance.git",
+    "directory": "packages/master-crud"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
