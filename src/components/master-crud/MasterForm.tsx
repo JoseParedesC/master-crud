@@ -28,6 +28,7 @@ export function MasterForm<T extends MasterEntity>({
   const {
     register,
     handleSubmit,
+    watch,
     formState: { errors },
   } = useForm<Record<string, unknown>>({
     resolver: zodResolver(schema as never),
@@ -107,6 +108,21 @@ export function MasterForm<T extends MasterEntity>({
                 )}
                 className="w-full rounded-lg border border-line bg-surface px-3 py-2.5 text-sm text-ink outline-none focus:border-ink disabled:bg-mist disabled:text-slate"
               />
+            )}
+
+            {field.type === "color" && (
+              <div className="flex items-center gap-3">
+                <input
+                  id={fieldName}
+                  type="color"
+                  disabled={disabled}
+                  {...register(fieldName)}
+                  className="h-10 w-14 shrink-0 cursor-pointer rounded-lg border border-line bg-surface p-1 disabled:cursor-not-allowed disabled:opacity-50"
+                />
+                <span className="font-mono text-sm text-slate">
+                  {(watch(fieldName) as string) || field.placeholder || "#000000"}
+                </span>
+              </div>
             )}
 
             {field.helperText && field.type !== "boolean" && (

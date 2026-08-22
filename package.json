@@ -1,6 +1,6 @@
 {
   "name": "@joseparedesc/master-crud",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "CRUD genérico y reutilizable para maestros/configuraciones sobre React + TypeScript + Firebase Firestore, con validación de código único, detección de referencias y borrado lógico/físico configurables.",
   "license": "MIT",
   "type": "module",

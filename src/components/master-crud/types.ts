@@ -7,7 +7,8 @@ export type MasterFieldType =
   | "number"
   | "select"
   | "boolean"
-  | "date";
+  | "date"
+  | "color";
 
 export interface SelectOption {
   value: string;
