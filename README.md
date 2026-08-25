@@ -1,165 +1,137 @@
-# MasterCrud
+# @joseparedesc/master-crud
 
-Componente genérico y reutilizable para administrar maestros/configuraciones
-(categorías, métodos de pago, tipos de movimiento, cuentas, etc.) sobre
-React + TypeScript + Firebase Firestore, sin duplicar lógica de CRUD por
-cada maestro.
+Componente de administración de maestros (tabla + formulario + filtros +
+confirmaciones de borrado) **100% desacoplado del backend**. Antes recibía
+una instancia de `Firestore` directamente; ahora recibe un **adaptador**
+que cumple el contrato `MasterCrudAdapter<T>` — así el mismo componente
+sirve para Firestore, una API REST propia, o cualquier otra fuente de
+datos, sin tocar una sola línea de `MasterCrud`, `MasterTable`,
+`MasterForm`, etc.
 
-**Antes de leer el código**, revisa [`ANALYSIS.md`](./ANALYSIS.md): ahí se
-explican las limitaciones reales de Firestore (unicidad, integridad
-referencial, transacciones, concurrencia, seguridad) y las decisiones de
-arquitectura tomadas en consecuencia. El código de este módulo es
-consecuencia directa de ese análisis, no al revés.
+## Qué cambió respecto a la versión anterior
 
-## Instalación (como paquete npm)
+| Antes | Ahora |
+|---|---|
+| `<MasterCrud db={firestoreDb} config={...} currentUser={...} />` | `<MasterCrud adapter={adapter} config={...} currentUser={...} />` |
+| Lógica de Firestore incrustada en el paquete | Lógica de Firestore movida a un **adaptador opcional** en `@joseparedesc/master-crud/firestore` |
+| No servía para otro backend que no fuera Firestore | Cualquier backend REST funciona con `createRestAdapter`, con rutas 100% configurables |
+
+`config` (tu `MasterCrudConfig<T>`, con `collection`, `columns`,
+`formFields`, `validationSchema`, etc.) **no cambia**. Es exactamente el
+mismo objeto de siempre.
+
+## Instalación
 
 ```bash
 npm install @joseparedesc/master-crud
 ```
 
-Requiere que tu proyecto ya tenga instalado (son `peerDependencies`, no se
-duplican dentro del paquete):
+## Uso con una API REST propia (nuevo — lo que hace al paquete reutilizable)
 
-```bash
-npm install react react-dom firebase react-hook-form zod @hookform/resolvers
+```tsx
+import { MasterCrud, createRestAdapter } from "@joseparedesc/master-crud";
+import { categoryConfig } from "./category.config";
+
+const adapter = createRestAdapter(categoryConfig, {
+  baseUrl: "https://api.mi-proyecto.com/api",
+  getHeaders: async () => ({
+    Authorization: `Bearer ${await getMyAppToken()}`,
+  }),
+});
+
+<MasterCrud adapter={adapter} config={categoryConfig} currentUser={user} />;
 ```
 
-### 1. Configura Tailwind
+Por defecto, `createRestAdapter` asume la convención REST más común
+(la misma que expone, por ejemplo, un backend NestJS típico):
 
-Los componentes usan tokens de diseño propios (`bg-ink`, `text-slate`,
-`bg-moss-light`, `rounded-xl2`, etc.) que no existen en Tailwind por
-defecto. Agrega el preset incluido:
+```
+GET    {baseUrl}/{resource}
+GET    {baseUrl}/{resource}/{id}
+POST   {baseUrl}/{resource}
+PATCH  {baseUrl}/{resource}/{id}
+PATCH  {baseUrl}/{resource}/{id}/active
+GET    {baseUrl}/{resource}/{id}/references   (opcional, para pre-check)
+DELETE {baseUrl}/{resource}/{id}
+```
 
-```js
-// tailwind.config.js
-module.exports = {
-  presets: [require("@joseparedesc/master-crud/tailwind-preset")],
-  content: [
-    "./src/**/*.{js,ts,jsx,tsx}",
-    // Necesario: Tailwind no escanea node_modules por defecto.
-    "./node_modules/@joseparedesc/master-crud/dist/**/*.js",
-  ],
+`{resource}` es `config.collection` salvo que pases `resource` explícito.
+
+### Rutas distintas a la convención por defecto
+
+Si tu backend no sigue esa convención (otros verbos, anidado bajo el
+usuario, otra versión de API, etc.), sobreescribe **solo** la resolución
+de rutas — el resto del adaptador sigue igual:
+
+```tsx
+const adapter = createRestAdapter(categoryConfig, {
+  baseUrl: "https://api.mi-proyecto.com",
+  resolveRoute: ({ action, resource, baseUrl, id }) => {
+    switch (action) {
+      case "list":
+        return { url: `${baseUrl}/v2/${resource}?onlyMine=true`, method: "GET" };
+      case "remove":
+        return { url: `${baseUrl}/v2/${resource}/${id}/archive`, method: "POST" };
+      default:
+        // usa la convención por defecto para el resto de acciones
+        return defaultResolveRoute({ action, resource, baseUrl, id });
+    }
+  },
+});
+```
+
+Esto es lo que hace que el paquete sea **reutilizable por otros
+proyectos**: la forma de las rutas nunca está fija en el componente ni en
+el adaptador — la decide quien lo integra.
+
+### Manejo de "no se puede eliminar: está en uso"
+
+- Si tu backend expone `GET /{resource}/{id}/references`, el adaptador lo
+  usa para advertir **antes** de pedir confirmación.
+- Si no lo expone, el adaptador igual respeta un `409` en el `DELETE`
+  con body `{ referencedBy: [{ description, count }] }` y muestra el
+  mismo aviso — solo que después de que el usuario confirma. Ambos casos
+  funcionan sin configuración adicional.
+
+## Uso con Firestore (compatibilidad con proyectos existentes)
+
+Vive en un entry point separado para no forzar `firebase` como
+dependencia de quien no lo usa:
+
+```tsx
+import { MasterCrud } from "@joseparedesc/master-crud";
+import { createFirestoreAdapter } from "@joseparedesc/master-crud/firestore";
+import { firebaseDb } from "./firebase";
+import { categoryConfig } from "./category.config";
+
+const adapter = createFirestoreAdapter(firebaseDb, categoryConfig);
+
+<MasterCrud adapter={adapter} config={categoryConfig} currentUser={user} />;
+```
+
+Reproduce exactamente el comportamiento original: registro de código
+único vía transacción, borrado lógico o físico según `allowDelete` y
+referencias, etc.
+
+## Escribir tu propio adaptador
+
+`MasterCrudAdapter<T>` es solo 7 métodos (2 opcionales). Cualquier fuente
+de datos que los implemente funciona con `<MasterCrud />`:
+
+```ts
+import type { MasterCrudAdapter } from "@joseparedesc/master-crud";
+
+const adapter: MasterCrudAdapter<Category> = {
+  list, getById, create, update, setActive, remove,
+  countReferences, // opcional
 };
 ```
 
-### 2. Copia las Firestore Security Rules e índices
+Por ejemplo: GraphQL, IndexedDB para modo offline, un mock en memoria para
+tests, Supabase, etc. — el componente nunca lo sabe.
 
-`firestore.rules` y `firestore.indexes.json` se publican dentro del
-paquete como referencia — cópialos (o fusiónalos) a los tuyos con
-`firebase deploy --only firestore:rules,firestore:indexes`. No se aplican
-automáticamente: son parte de tu proyecto de Firebase, no del paquete npm.
+## Ejemplo de integración completa
 
-### 3. Úsalo
-
-```tsx
-import { MasterCrud, type MasterCrudConfig, type MasterEntity } from "@joseparedesc/master-crud";
-import { z } from "zod";
-
-interface Category extends MasterEntity {
-  description?: string;
-}
-
-const categoryConfig: MasterCrudConfig<Category> = {
-  collection: "categories",
-  title: "Categorías",
-  singularTitle: "Categoría",
-  codeField: "code",
-  nameField: "name",
-  searchableFields: ["code", "name"],
-  columns: [
-    { field: "code", label: "Código" },
-    { field: "name", label: "Nombre" },
-    { field: "active", label: "Estado" },
-  ],
-  formFields: [
-    { name: "code", label: "Código", type: "text", required: true, disabledOnEdit: true },
-    { name: "name", label: "Nombre", type: "text", required: true },
-  ],
-  references: [{ collection: "movements", field: "categoryId", description: "movimientos" }],
-  allowDelete: true,
-  allowDeactivate: true,
-  validationSchema: z.object({ code: z.string().min(1), name: z.string().min(1) }),
-};
-
-export function CategoryCrud({ db, user }) {
-  return <MasterCrud db={db} config={categoryConfig} currentUser={user} />;
-}
-```
-
-> **Next.js App Router:** el paquete ya incluye la directiva `"use client"`
-> en su build, así que puedes importarlo directo en un Server Component
-> padre sin marcar nada adicional (el componente en sí se hidrata como
-> cliente).
-
-## Desarrollo de este paquete
-
-```bash
-npm install
-npm run test        # 20 tests unitarios, sin necesidad de Firestore Emulator
-npm run typecheck
-npm run build        # genera dist/ (ESM + CJS + .d.ts)
-npm pack --dry-run   # revisa exactamente qué se publicaría
-```
-
-## Cómo agregar un maestro nuevo
-
-1. Define la interfaz TypeScript extendiendo `MasterEntity`.
-2. Define el schema Zod (ver `schemas/master.schema.ts` para el ejemplo de
-   `Category`).
-3. Define un `MasterCrudConfig<T>` (ver `config/category.config.ts`).
-4. Úsalo así, sin escribir ningún CRUD propio:
-
-```tsx
-<MasterCrud db={db} config={myConfig} currentUser={user} />
-```
-
-El ejemplo completo de "Category" está en `src/examples/CategoryCrud.tsx`.
-
-### Aislamiento por usuario
-
-Todos los maestros y sus referencias se guardan bajo
-`users/{uid}/{collection}`. Las lecturas requieren pasar el usuario
-autenticado al servicio y las reglas de Firestore solo permiten acceder al
-`uid` de la sesión actual. Cada usuario puede crear tantos registros como
-necesite, pero sus datos no se comparten con otros usuarios.
-
-## Estructura
-
-```text
-src/
-├── components/master-crud/   # UI genérica (tabla, formulario, diálogos, shell)
-├── services/firestore/       # Acceso a Firestore + lógica de unicidad/referencias
-├── hooks/useMasterCrud.ts    # Orquesta el servicio y expone estados de UI
-├── schemas/                  # Zod: schema base + ejemplo Category
-├── types/master.ts           # MasterEntity, AuditLog
-├── errors/masterErrors.ts    # Errores de dominio (nunca se exponen errores crudos de Firebase)
-├── config/category.config.ts # Ejemplo de configuración de un maestro
-├── examples/CategoryCrud.tsx # Ejemplo de uso: config + <MasterCrud />, sin lógica propia
-└── __tests__/                # Tests unitarios (function pura + servicio con Firestore fake)
-
-functions/src/masterCrud.ts   # Stub de Cloud Function para borrado reforzado (ver ANALYSIS.md)
-firestore.rules               # Reglas de seguridad
-firestore.indexes.json        # Índices compuestos necesarios
-```
-
-## Puntos clave de la arquitectura
-
-- **Ningún componente visual importa Firestore.** Todo pasa por
-  `MasterCrudService` → `useMasterCrud` → componentes. Esto es lo que
-  permite testear el 100% de la lógica de negocio sin un emulador (ver
-  `__tests__/masterCrud.service.test.ts`, que usa un fake de Firestore en
-  memoria en vez de mocks superficiales).
-- **Unicidad de código:** colección `masterCodeRegistry` con IDs
-  determinísticos (`{collection}__{code-en-minusculas}`), escrita en la
-  misma transacción que el documento del maestro. Reforzada también en
-  `firestore.rules` con `!exists(...)`, no solo en el cliente.
-- **Eliminación:** `resolveDeleteStrategy` es una función pura que decide
-  `blocked | physical | soft` a partir de los conteos de referencias — se
-  testea sin ningún mock. El borrado físico real está bloqueado en las
-  reglas de Firestore (`allow delete: if false`); en producción debe
-  ejecutarse desde la Cloud Function callable descrita en
-  `functions/src/masterCrud.ts` y en `ANALYSIS.md`.
-- **Errores de dominio:** `MasterError` y sus subclases
-  (`DuplicateCodeError`, `ReferencedEntityError`, `PermissionError`,
-  `ValidationError`, `NotFoundError`). La UI nunca ve un código de error
-  crudo de Firebase.
+Ver `examples/frontend-integration/` para el caso real: `Categories.tsx`
+y `api.ts` del proyecto `personal_finance`, apuntando al backend NestJS +
+PostgreSQL de referencia.

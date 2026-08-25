@@ -1,30 +1,22 @@
-// ── Componente principal ──────────────────────────────────────────────
-export { MasterCrud } from "./components/master-crud/MasterCrud";
+// Tipos base
+export type {
+  MasterEntity,
+  MasterEntityInput,
+  MasterFieldType,
+  SelectOption,
+  MasterFormField,
+  MasterColumn,
+  MasterReference,
+  MasterCrudConfig,
+  DeleteStrategy,
+  MasterUiState,
+  MasterFilters,
+  CurrentUser,
+  ReferenceCount,
+} from './types';
+export { EMPTY_MASTER_FILTERS } from './types';
 
-// Sub-componentes exportados por si alguien quiere componer su propia UI
-export { MasterTable } from "./components/master-crud/MasterTable";
-export { MasterForm } from "./components/master-crud/MasterForm";
-export { MasterFiltersBar } from "./components/master-crud/MasterFilters";
-export { MasterModal } from "./components/master-crud/MasterModal";
-export { DeleteConfirmation } from "./components/master-crud/DeleteConfirmation";
-export { ReferenceWarning } from "./components/master-crud/ReferenceWarning";
-
-// ── Hook ────────────────────────────────────────────────────────────
-export { useMasterCrud } from "./hooks/useMasterCrud";
-
-// ── Servicio (para quien necesite lógica sin la UI) ────────────────
-export { MasterCrudService } from "./services/firestore/masterCrud.service";
-export {
-  resolveDeleteStrategy,
-  normalizeCode,
-  buildCodeRegistryId,
-} from "./services/firestore/deleteStrategy";
-export type { ReferenceCount } from "./services/firestore/deleteStrategy";
-
-// ── Schemas base (útiles como punto de partida) ────────────────────
-export { baseMasterSchema } from "./schemas/master.schema";
-
-// ── Errores de dominio ──────────────────────────────────────────────
+// Errores
 export {
   MasterError,
   DuplicateCodeError,
@@ -33,19 +25,32 @@ export {
   ValidationError,
   NotFoundError,
   toMasterError,
-} from "./errors/masterErrors";
+} from './errors/masterErrors';
 
-// ── Tipos ───────────────────────────────────────────────────────────
-export type { MasterEntity, MasterEntityInput, AuditLog } from "./types/master";
-export type {
-  MasterCrudConfig,
-  MasterColumn,
-  MasterFormField,
-  MasterFieldType,
-  MasterReference,
-  MasterFilters,
-  MasterUiState,
-  DeleteStrategy,
-  SelectOption,
-} from "./components/master-crud/types";
-export { EMPTY_MASTER_FILTERS } from "./components/master-crud/types";
+// Contrato del adaptador (lo que hace al paquete reutilizable)
+export type { MasterCrudAdapter } from './adapters/types';
+
+// Adaptador REST genérico (no depende de ningún backend concreto)
+export { createRestAdapter, defaultResolveRoute } from './adapters/restAdapter';
+export type { RestAdapterOptions, ResolveRouteParams, RestAction } from './adapters/restAdapter';
+
+// Hook
+export { useMasterCrud } from './hooks/useMasterCrud';
+export type { UseMasterCrudOptions } from './hooks/useMasterCrud';
+
+// Componentes
+export { MasterCrud } from './components/MasterCrud';
+export type { MasterCrudProps } from './components/MasterCrud';
+export { MasterTable } from './components/MasterTable';
+export { MasterForm } from './components/MasterForm';
+export { MasterFiltersBar } from './components/MasterFiltersBar';
+export { MasterModal } from './components/MasterModal';
+export { DeleteConfirmation } from './components/DeleteConfirmation';
+export { ReferenceWarning } from './components/ReferenceWarning';
+
+// Schema base
+export { baseMasterSchema } from './schemas/baseMasterSchema';
+
+// NOTA: `createFirestoreAdapter` NO se exporta desde aquí para no forzar
+// `firebase` como dependencia de quien no lo use. Está en el entry point
+// separado: `@joseparedesc/master-crud/firestore`.
