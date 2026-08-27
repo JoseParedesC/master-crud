@@ -63,8 +63,42 @@ export function MasterCrud<T extends MasterEntity>({ adapter, config, currentUse
     setIsFormOpen(true);
   }
 
+  function getUpdateValues(
+    values: Record<string, unknown>,
+    fields: MasterCrudConfig<T>['formFields'],
+  ) {
+    const disabledFields = new Set(
+      fields
+        .filter((field) => field.disabledOnEdit)
+        .map((field) => field.name),
+    );
+
+    return Object.fromEntries(
+      Object.entries(values).filter(
+        ([key]) => !disabledFields.has(key as keyof T & string),
+      ),
+    );
+  }
+
   async function handleSubmit(values: Record<string, unknown>) {
-    const result = editingRow ? await update(editingRow.id, values as Partial<T>) : await create(values as Partial<T>);
+    if (editingRow) {
+      const updateValues = getUpdateValues(values, config.formFields);
+
+      const result = await update(
+        editingRow.id,
+        updateValues as Partial<T>,
+      );
+
+      if (result.ok) {
+        setIsFormOpen(false);
+        setEditingRow(null);
+      }
+
+      return;
+    }
+
+    const result = await create(values as Partial<T>);
+
     if (result.ok) {
       setIsFormOpen(false);
       setEditingRow(null);

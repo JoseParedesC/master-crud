@@ -1,6 +1,6 @@
 {
   "name": "@joseparedesc/master-crud",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Componente de administración de maestros (tabla + formulario + CRUD) 100% desacoplado del backend. Trae un adaptador REST genérico y, opcionalmente, uno para Firestore.",
   "license": "MIT",
   "type": "module",
